@@ -3,32 +3,35 @@ import json
 from collections import defaultdict
 
 # Read CSV data
-with open('Dataset - Progress page test - Sheet2.csv', 'r', encoding='utf-8') as f:
+with open('dataset_with_mistake_tags - Sheet2.csv', 'r', encoding='utf-8') as f:
     reader = csv.DictReader(f)
     rows = list(reader)
 
-# Organize data structure: student -> topic -> description -> questions
+# Organize data structure: student -> topic -> mistakes_category -> questions
+# Each question also stores its description for reference
 data = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 
 for row in rows:
     student_id = row['student_id']
     topic = row['name']
     description = row['description']
+    mistakes_category = row['mistakes category'].strip() if row['mistakes category'] else description
 
     # Store question data
     question_data = {
         'answer_id': row['answer_id'],
         'q_text': row['q_text1'] or row['q_text'],
         'q_image': row['q_image'],
-        'model_solution': row['model solution'],
-        'student_answer': row['student answer'],
-        'maximum_mark': row['maximum mark'],
+        'model_solution': row['solution'],
+        'student_answer': row['answer'],
+        'maximum_mark': row['mark'],
         'mark_awarded': row['mark_awarded'],
         'mistake': row['Mistake?'],
-        'skill_level': row['skill level']
+        'skill_level': row['student_score'],
+        'description': description  # Keep description for reference
     }
 
-    data[student_id][topic][description].append(question_data)
+    data[student_id][topic][mistakes_category].append(question_data)
 
 # Calculate statistics for topics
 topic_stats = {}
@@ -39,8 +42,8 @@ for student_id in data:
         mistakes = 0
         skill_levels = []
 
-        for description in data[student_id][topic]:
-            for question in data[student_id][topic][description]:
+        for mistakes_category in data[student_id][topic]:
+            for question in data[student_id][topic][mistakes_category]:
                 total_questions += 1
                 if question['mistake'].lower() == 'y':
                     mistakes += 1
@@ -57,20 +60,8 @@ for student_id in data:
             'skill_level': avg_skill_level
         }
 
-# Now let's identify mistake categories
-# We'll extract mistake categories from descriptions for questions with mistakes
-mistake_categories = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
-
-for student_id in data:
-    for topic in data[student_id]:
-        for description in data[student_id][topic]:
-            mistake_category = description  # The description IS the mistake category
-            for question in data[student_id][topic][description]:
-                if question['mistake'].lower() == 'y':
-                    mistake_categories[student_id][topic][description][mistake_category].append(question)
-                else:
-                    # Also include non-mistakes for complete question list
-                    mistake_categories[student_id][topic][description][mistake_category].append(question)
+# The data is already organized by mistakes_category, so we don't need to reorganize it
+# The data structure is: student_id -> topic -> mistakes_category -> questions
 
 # Generate HTML
 html = """<!DOCTYPE html>
@@ -443,17 +434,18 @@ for student_id in sorted(data.keys()):
                 </div>
 """
 
-        # Generate content for each description
-        for description in sorted(data[student_id][topic].keys()):
-            questions = data[student_id][topic][description]
+        # Generate content for each mistakes category
+        for mistakes_category in sorted(data[student_id][topic].keys()):
+            questions = data[student_id][topic][mistakes_category]
 
-            # Count frequency of this mistake category (description) within this topic-description combo
-            # Since each description section shows one mistake category (the description itself),
-            # the frequency is the number of questions in this description
+            # Get the description from the first question (they should all have the same description)
+            description = questions[0]['description'] if questions else mistakes_category
+
+            # Count frequency of this mistake category
             frequency = len(questions)
 
             # Create unique ID for modal
-            modal_id = f"modal_{student_id}_{topic}_{description}".replace(' ', '_').replace(',', '').replace('(', '').replace(')', '').replace('*', '').replace('&', '').replace('/', '').replace('-', '_')
+            modal_id = f"modal_{student_id}_{topic}_{mistakes_category}".replace(' ', '_').replace(',', '').replace('(', '').replace(')', '').replace('*', '').replace('&', '').replace('/', '').replace('-', '_')
 
             html += f"""
                 <div class="description-section">
@@ -461,7 +453,7 @@ for student_id in sorted(data.keys()):
                     <div class="pills-container">
                         <div class="mistake-pill" onclick="openModal('{modal_id}')">
                             <span class="frequency-badge">{frequency}x</span>
-                            <span>{description}</span>
+                            <span>{mistakes_category}</span>
                         </div>
                     </div>
                 </div>
@@ -475,18 +467,18 @@ for student_id in sorted(data.keys()):
         </div>
 """
 
-# Generate modals for each description
+# Generate modals for each mistakes category
 for student_id in sorted(data.keys()):
     for topic in sorted(data[student_id].keys()):
-        for description in sorted(data[student_id][topic].keys()):
-            questions = data[student_id][topic][description]
-            modal_id = f"modal_{student_id}_{topic}_{description}".replace(' ', '_').replace(',', '').replace('(', '').replace(')', '').replace('*', '').replace('&', '').replace('/', '').replace('-', '_')
+        for mistakes_category in sorted(data[student_id][topic].keys()):
+            questions = data[student_id][topic][mistakes_category]
+            modal_id = f"modal_{student_id}_{topic}_{mistakes_category}".replace(' ', '_').replace(',', '').replace('(', '').replace(')', '').replace('*', '').replace('&', '').replace('/', '').replace('-', '_')
 
             html += f"""
 <div id="{modal_id}" class="modal">
     <div class="modal-content">
         <div class="modal-header">
-            <h2>{description}</h2>
+            <h2>{mistakes_category}</h2>
             <span class="close" onclick="closeModal('{modal_id}')">&times;</span>
         </div>
         <div class="modal-body scrollbar">
